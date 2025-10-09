@@ -1,0 +1,561 @@
+---
+title: "Probability and Distributions in HEOR with R"
+subtitle: "Core concepts, common distributions, and practical simulation examples"
+author: "Carlos Pineda-Antunez"
+date: last-modified
+format:
+  html:
+    theme:
+      light: flatly
+      dark: darkly
+    toc: true
+    toc-title: "On this page"
+    toc-location: left
+    number-sections: true
+    code-copy: true
+    code-overflow: wrap
+    smooth-scroll: true
+    df-print: paged
+    title-block-banner: true
+    fig-width: 8
+    fig-height: 5
+    fig-align: center
+execute:
+  echo: true
+  warning: true
+  message: true
+editor: visual
+---
+
+Abstract
+
+This Quarto document reviews key probability concepts and the distributions most commonly used in Health Economics and Outcomes Research (HEOR). Through concise simulations and visualizations, we connect theory to typical HEOR tasks: event probabilities, counts of utilization, costs, time-to-event outcomes, utilities, and Bayesian updating.
+
+How to use this document
+
+- Run all cells to generate simulated examples for each concept/distribution.
+- Replace simulated inputs with your data to see how distributional choices affect analysis.
+- Use figures and tables as templates for teaching, code review, or reports.
+
+Setup
+
+```{r setup}
+# Install/load packages
+pkgs <- c("tidyverse", "survival", "broom", "gt", "scales", "MASS", "gridExtra")
+to_install <- setdiff(pkgs, rownames(installed.packages()))
+if (length(to_install) > 0) install.packages(to_install, repos = "https://cloud.r-project.org")
+
+library(tidyverse)
+library(survival)
+library(broom)
+library(gt)
+library(scales)
+library(MASS)
+library(gridExtra)
+
+set.seed(2025)
+theme_set(theme_minimal(base_size = 12))
+options(scipen = 999)
+
+# Helper: simple Dirichlet RNG (no extra packages)
+rdirichlet <- function(n, alpha) {
+  k <- length(alpha)
+  x <- matrix(rexp(n * k, rate = 1), nrow = n, ncol = k) # will be scaled by Gamma draws
+  for (j in 1:k) x[, j] <- rgamma(n, shape = alpha[j], rate = 1)
+  x / rowSums(x)
+}
+```
+
+1. Probability Basics
+
+Key ideas
+
+- Events and probabilities: P(A), P(B), joint P(A ∩ B), conditional P(A | B) = P(A ∩ B) / P(B).
+- Independence: A and B are independent if P(A ∩ B) = P(A)P(B).
+- Law of large numbers (LLN): sample proportions and means converge to true probabilities/expectations as n increases.
+
+Example (HEOR context)
+
+- A: Monthly cost > $10,000
+- B: At least one inpatient admission this month
+
+We simulate cost and admissions for many member-months and estimate P(A), P(B), P(A ∩ B), P(A)P(B), P(A | B).
+
+```{r prob-basics}
+n_mc <- 100000
+lam_admit <- 0.5 # mean admits per month
+cost_meanlog <- 8.1
+cost_sdlog <- 0.85
+
+admit <- rpois(n_mc, lam_admit)
+cost <- rlnorm(n_mc, meanlog = cost_meanlog, sdlog = cost_sdlog)
+
+A <- cost > 10000
+B <- admit >= 1
+
+est <- tibble(
+  `P(A)` = mean(A),
+  `P(B)` = mean(B),
+  `P(A ∩ B)` = mean(A & B),
+  `P(A)P(B)` = mean(A) * mean(B),
+  `P(A | B)` = mean(A & B) / mean(B)
+) %>% pivot_longer(everything(), names_to = "quantity", values_to = "estimate") %>%
+  mutate(estimate = round(estimate, 4))
+
+gt(est) %>%
+  cols_label(quantity = "Quantity", estimate = "Estimate") %>%
+  tab_header(title = "Monte Carlo Estimates of Event Probabilities (Member-Month)")
+```
+
+Law of Large Numbers demonstration
+
+We track the running estimate of P(B) as sample size grows.
+
+```{r lln}
+running_pB <- tibble(
+  n = 1:n_mc,
+  pB_hat = cumsum(B) / (1:n_mc)
+)
+
+ggplot(running_pB %>% filter(n %% 200 == 0), aes(n, pB_hat)) +
+  geom_line(color = "steelblue") +
+  geom_hline(yintercept = 1 - dpois(0, lam_admit), linetype = "dashed", color = "tomato") +
+  labs(title = "Law of Large Numbers: Convergence of P(B) Estimate",
+       x = "Number of member-months",
+       y = "Estimated P(at least one admission)") +
+  annotate("text", x = n_mc*0.7, y = 1 - dpois(0, lam_admit) + 0.02,
+           label = "True P(B) = 1 - P(0 admits) = 1 - e^{-λ}", color = "tomato")
+```
+
+2. Random Variables, Expectation, and Variance
+
+Key ideas
+
+- A random variable X has a distribution summarized by its mean E[X] and variance Var(X).
+- Linear expectation: E[aX + b] = aE[X] + b; Var(aX + b) = a^2 Var(X).
+- For sums of independent variables, means add and variances add.
+
+Demonstration with simulated costs (lognormal) and admissions (Poisson):
+
+```{r moments-demo}
+n <- 50000
+X <- rlnorm(n, meanlog = 8, sdlog = 0.9)  # monthly cost
+Y <- rpois(n, lambda = 0.7)               # monthly admits
+
+emp <- tibble(
+  variable = c("Cost (X)", "Admits (Y)"),
+  mean = c(mean(X), mean(Y)),
+  variance = c(var(X), var(Y))
+)
+
+theo <- tibble(
+  variable = c("Cost (X)", "Admits (Y)"),
+  mean = c(exp(8 + 0.9^2/2), 0.7),
+  variance = c((exp(0.9^2) - 1) * exp(2*8 + 0.9^2), 0.7)
+)
+
+compare <- emp %>%
+  left_join(theo, by = "variable", suffix = c("_empirical", "_theoretical")) %>%
+  mutate(across(contains("mean"), round, 2),
+         across(contains("variance"), round, 2))
+
+gt(compare) %>%
+  tab_header(title = "Empirical vs Theoretical Moments")
+```
+
+3. Bernoulli and Binomial: Binary outcomes and counts of successes
+
+Common HEOR uses
+
+- Readmission within 30 days (yes/no).
+- Medication adherence threshold (PDC ≥ 80%).
+- Number of responders in a sample.
+
+```{r bernoulli-binomial}
+# Bernoulli trials (readmission yes/no)
+p <- 0.15
+n_pat <- 2000
+readmit <- rbinom(n_pat, size = 1, prob = p)
+
+# Binomial count within cohort of size m per site
+m <- 50
+n_sites <- 1000
+responders_per_site <- rbinom(n_sites, size = m, prob = p)
+
+summary_tbl <- tibble(
+  Quantity = c("Pr(readmit=1)", "Mean responders/site", "Var responders/site"),
+  Estimate = c(mean(readmit), mean(responders_per_site), var(responders_per_site)),
+  Theoretical = c(p, m*p, m*p*(1-p))
+) %>%
+  mutate(across(c(Estimate, Theoretical), round, 3))
+
+gt(summary_tbl) %>%
+  tab_header(title = "Bernoulli/Binomial: Empirical vs Theoretical")
+```
+
+```{r binom-pmf, fig.cap="Binomial PMF (m=50, p=0.15) with Normal approximation."}
+k <- 0:m
+pmf <- dbinom(k, size = m, prob = p)
+df <- tibble(k, pmf)
+
+mu <- m*p
+sigma <- sqrt(m*p*(1-p))
+approx <- tibble(k, density = dnorm(k, mean = mu, sd = sigma))
+
+ggplot(df, aes(k, pmf)) +
+  geom_col(fill = "steelblue", alpha = 0.6) +
+  geom_line(data = approx, aes(k, density), color = "tomato", linewidth = 1) +
+  labs(x = "Number of responders", y = "Probability")
+```
+
+4. Poisson and Negative Binomial: Utilization counts and overdispersion
+
+Common HEOR uses
+
+- Counts of inpatient admissions, ED visits, office visits.
+- Overdispersion (variance > mean) is common; Negative Binomial often fits better than Poisson.
+
+```{r pois-vs-nb}
+n <- 10000
+
+# Scenario A: Poisson (mean = variance)
+lambda <- 0.8
+y_pois <- rpois(n, lambda)
+
+# Scenario B: Overdispersed counts (NegBin with mean mu and size k)
+mu <- 0.8
+k_size <- 1.0 # smaller => more overdispersion
+y_nb <- rnbinom(n, size = k_size, mu = mu)
+
+summ <- tibble(
+  scenario = c("Poisson", "NegBin"),
+  mean = c(mean(y_pois), mean(y_nb)),
+  variance = c(var(y_pois), var(y_nb))
+)
+
+gt(summ %>% mutate(across(c(mean, variance), round, 3))) %>%
+  tab_header(title = "Mean-Variance Comparison: Poisson vs Negative Binomial")
+```
+
+```{r pois-nb-plot, fig.cap="Distribution of counts: Poisson vs Negative Binomial (overdispersed)."}
+dfp <- tibble(y = y_pois, dist = "Poisson")
+dfn <- tibble(y = y_nb, dist = "NegBin")
+df_all <- bind_rows(dfp, dfn)
+
+ggplot(df_all, aes(y, after_stat(count/sum(count)), fill = dist)) +
+  geom_histogram(binwidth = 1, position = "dodge", color = "white") +
+  scale_x_continuous(breaks = 0:7) +
+  labs(x = "Count", y = "Proportion", fill = "Distribution")
+```
+
+Fitting Poisson vs Negative Binomial regression to overdispersed data:
+
+```{r fit-pois-nb}
+set.seed(1)
+n <- 5000
+x <- rbinom(n, 1, 0.5)
+# True NegBin generating model
+mu <- exp(-0.2 + 0.5*x)
+k_size <- 1.2
+y <- rnbinom(n, size = k_size, mu = mu)
+
+fit_p <- glm(y ~ x, family = poisson())
+fit_nb <- MASS::glm.nb(y ~ x)
+
+coef_tbl <- bind_rows(
+  tidy(fit_p) %>% mutate(model = "Poisson"),
+  tidy(fit_nb) %>% mutate(model = "NegBin")
+) %>%
+  mutate(estimate = round(estimate, 3),
+         std.error = round(std.error, 3),
+         p.value = round(p.value, 3))
+
+gt(coef_tbl %>% dplyr::select(model, term, estimate, std.error, p.value)) %>%
+  tab_header(title = "Poisson vs Negative Binomial Regression Coefficients")
+```
+
+5. Cost Distributions: Gamma and Lognormal
+
+Common HEOR uses
+
+- Costs are positive and right-skewed.
+- Gamma GLM with log link or Lognormal models are typical; two-part models when many zeros.
+
+```{r gamma-lognormal}
+n <- 10000
+
+# Gamma: shape/scale parameterization
+shape <- 2.2
+scale <- 300
+cost_gamma <- rgamma(n, shape = shape, scale = scale)
+
+# Lognormal
+meanlog <- 6.5
+sdlog <- 0.9
+cost_logn <- rlnorm(n, meanlog = meanlog, sdlog = sdlog)
+
+costs <- bind_rows(
+  tibble(cost = cost_gamma, model = "Gamma"),
+  tibble(cost = cost_logn, model = "Lognormal")
+)
+
+summary_costs <- costs %>% group_by(model) %>%
+  summarise(mean = mean(cost), sd = sd(cost), p95 = quantile(cost, 0.95), .groups = "drop")
+
+gt(summary_costs %>% mutate(across(c(mean, sd, p95), dollar))) %>%
+  tab_header(title = "Cost Distribution Summaries")
+```
+
+```{r cost-density, fig.cap="Cost densities (truncated at 99th percentile for visibility)."}
+cap <- costs %>% group_by(model) %>% summarise(cut = quantile(cost, 0.99), .groups = "drop") %>% pull(cut) %>% min()
+ggplot(costs %>% filter(cost < cap), aes(cost, fill = model)) +
+  geom_density(alpha = 0.35, color = NA) +
+  scale_x_continuous(labels = dollar) +
+  labs(x = "Cost ($)", y = "Density", fill = "Distribution")
+```
+
+Gamma GLM example with a binary covariate:
+
+```{r gamma-glm}
+set.seed(2)
+n <- 4000
+treat <- rbinom(n, 1, 0.5)
+mu <- exp(6 + 0.4 * treat) # log-link mean
+# Simulate Gamma with variance proportional to mean^2
+phi <- 1.2 # dispersion
+shape <- 1/phi
+scale <- mu * phi
+y_cost <- rgamma(n, shape = shape, scale = scale)
+
+fit_gamma <- glm(y_cost ~ treat, family = Gamma(link = "log"))
+tidy(fit_gamma, conf.int = TRUE) %>%
+  mutate(across(c(estimate, conf.low, conf.high), round, 3)) %>% gt() %>%
+  tab_header(title = "Gamma GLM (log link) for Costs")
+```
+
+6. Time-to-Event Distributions: Exponential and Weibull
+
+Common HEOR uses
+
+- Time to hospitalization, treatment discontinuation, death.
+- Exponential has constant hazard; Weibull allows increasing/decreasing hazard.
+
+```{r survival-sim}
+set.seed(3)
+n <- 3000
+
+# Exponential: rate = 0.1 per month (mean 10 months)
+rate_exp <- 0.1
+t_exp <- rexp(n, rate = rate_exp)
+
+# Weibull: shape > 1 => increasing hazard
+shape_w <- 1.5
+scale_w <- 12
+t_weib <- rweibull(n, shape = shape_w, scale = scale_w)
+
+# Administrative censoring at 12 months
+censor <- 12
+time <- c(t_exp, t_weib)
+event <- as.integer(time <= censor)
+time <- pmin(time, censor)
+dist <- rep(c("Exponential", "Weibull"), each = n)
+
+surv_df <- tibble(time = time, event = event, dist = dist)
+fit_km <- survfit(Surv(time, event) ~ dist, data = surv_df)
+km_tidy <- broom::tidy(fit_km)
+```
+
+```{r survival-plot, fig.cap="Kaplan–Meier curves with theoretical survival overlays."}
+# Theoretical survival functions
+tgrid <- seq(0, 12, by = 0.2)
+S_exp <- exp(-rate_exp * tgrid)
+S_weib <- exp(-(tgrid/scale_w)^shape_w)
+theo <- bind_rows(
+  tibble(time = tgrid, S = S_exp, dist = "Exponential (theoretical)"),
+  tibble(time = tgrid, S = S_weib, dist = "Weibull (theoretical)")
+)
+
+ggplot() +
+  geom_step(data = km_tidy, aes(time, estimate, color = strata), linewidth = 1) +
+  geom_line(data = theo, aes(time, S, color = dist), linetype = "dashed") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(x = "Time (months)", y = "Survival",
+       color = "Curve")
+```
+
+Hazard shapes
+
+```{r hazard-shapes, fig.cap="Hazard functions: constant (Exponential) vs increasing (Weibull, shape=1.5)."}
+haz_exp <- tibble(time = tgrid[-1], hazard = rep(rate_exp, length(tgrid)-1), dist = "Exponential")
+haz_weib <- tibble(time = tgrid[-1],
+                   hazard = (shape_w/scale_w) * (tgrid[-1]/scale_w)^(shape_w - 1),
+                   dist = "Weibull (shape 1.5)")
+
+haz <- bind_rows(haz_exp, haz_weib)
+ggplot(haz, aes(time, hazard, color = dist)) +
+  geom_line(linewidth = 1) +
+  labs(x = "Time", y = "Hazard", color = "Distribution")
+```
+
+7. Beta Distribution: Probabilities and Utilities (0–1)
+
+Common HEOR uses
+
+- Utility weights and QALYs bounded in [0,1].
+- Probabilities and rates, including Bayesian priors.
+
+```{r beta-examples, fig.cap="Beta distributions illustrate diverse shapes for bounded quantities."}
+x <- seq(0, 1, by = 0.001)
+beta_cfg <- tribble(
+  ~alpha, ~beta, ~label,
+  2, 2, "Beta(2,2): diffusion/prior ignorance",
+  16, 4, "Beta(16,4): mean 0.8, concentrated",
+  2, 8, "Beta(2,8): skewed low"
+)
+
+beta_df <- beta_cfg %>%
+  rowwise() %>%
+  mutate(df = list(tibble(x = x, density = dbeta(x, alpha, beta)))) %>%
+  unnest(df)
+
+ggplot(beta_df, aes(x, density, color = label)) +
+  geom_line(linewidth = 1) +
+  labs(x = "Value in [0,1]", y = "Density", color = "Distribution")
+```
+
+Bayesian Beta–Binomial updating (e.g., response rate)
+
+```{r beta-binomial}
+alpha0 <- 2; beta0 <- 2              # prior
+n <- 100; y <- 30                    # 30 responses out of 100
+alpha_post <- alpha0 + y
+beta_post  <- beta0 + (n - y)
+
+prior_mean <- alpha0 / (alpha0 + beta0)
+post_mean  <- alpha_post / (alpha_post + beta_post)
+ci <- qbeta(c(0.025, 0.975), alpha_post, beta_post)
+
+tab <- tibble(
+  quantity = c("Prior mean", "Posterior mean", "95% CrI lower", "95% CrI upper"),
+  value = c(prior_mean, post_mean, ci[1], ci[2])
+) %>% mutate(value = round(value, 3))
+
+gt(tab) %>%
+  tab_header(title = "Beta-Binomial Update for a Response Probability")
+```
+
+8. Multinomial and Dirichlet: Transitions in Markov Models
+
+Common HEOR uses
+
+- Multistate models with row-wise transition probabilities.
+- Dirichlet prior over categorical probabilities.
+
+```{r dirichlet-demo}
+set.seed(4)
+alpha <- c(10, 5, 2) # prior counts for (Healthy, Sick, Dead)
+K <- 5
+rows <- rdirichlet(K, alpha)
+colnames(rows) <- c("Healthy", "Sick", "Dead")
+dirichlet_tbl <- as_tibble(rows) %>% mutate(row = row_number()) %>% relocate(row)
+
+gt(dirichlet_tbl %>% mutate(across(-row, ~round(.x, 3)))) %>%
+  tab_header(title = "Samples from Dirichlet(alpha = [10,5,2])")
+```
+
+9. Zero-Inflated and Hurdle Models: Many Zeros in Utilization
+
+Common HEOR uses
+
+- Zero-inflated counts for ED visits, admissions, or costs in short windows.
+
+```{r zip-demo, fig.cap="Zero-Inflated Poisson (π=0.4, λ=1.2) produces excess zeros and overdispersion."}
+set.seed(5)
+n <- 10000
+pi0 <- 0.4
+lambda <- 1.2
+is_struct_zero <- rbinom(n, 1, pi0)
+y_zip <- ifelse(is_struct_zero == 1, 0, rpois(n, lambda))
+zip_df <- tibble(y = y_zip)
+
+prop_zero <- mean(y_zip == 0)
+mean_y <- mean(y_zip); var_y <- var(y_zip)
+
+summary_zip <- tibble(
+  quantity = c("Proportion zeros", "Mean", "Variance"),
+  estimate = c(prop_zero, mean_y, var_y)
+)
+
+p_hist <- ggplot(zip_df, aes(y, after_stat(count/sum(count)))) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  scale_x_continuous(breaks = 0:8) +
+  labs(x = "Count", y = "Proportion")
+
+gridExtra::grid.arrange(
+  tableGrob(summary_zip %>% mutate(estimate = round(estimate, 3))),
+  p_hist,
+  ncol = 2,
+  widths = c(0.45, 0.55)
+)
+```
+
+10. Linking Distributions to HEOR Modeling Choices
+
+- Binary outcomes: Bernoulli/Binomial; logistic regression (logit link).
+- Counts: Poisson (log link) if variance ≈ mean; Negative Binomial for overdispersion.
+- Costs: Gamma (log link) or Lognormal; two-part/hurdle when many zeros.
+- Time-to-event: Exponential (constant hazard), Weibull (flexible hazard), Cox (semiparametric).
+- Probabilities/utilities: Beta; transition vectors: Dirichlet/Multinomial.
+- Zero inflation: Zero-inflated Poisson/NegBin; hurdle models.
+
+Appendix A: Central Limit Theorem (CLT) example
+
+Even with skewed costs, sample means are approximately normal for large n.
+
+```{r clt}
+set.seed(6)
+n_samples <- 10000
+sample_size <- 50
+cost <- rlnorm(1e6, meanlog = 6.7, sdlog = 1.0)
+idx <- matrix(sample.int(length(cost), n_samples * sample_size, replace = TRUE), ncol = sample_size)
+means <- rowMeans(matrix(cost[idx], ncol = sample_size, byrow = TRUE))
+ggplot(tibble(x = means), aes(x)) +
+  geom_histogram(aes(y = ..density..), bins = 50, fill = "steelblue", color = "white") +
+  geom_density(color = "tomato", linewidth = 1) +
+  labs(title = "Distribution of Sample Means of Skewed Costs (n=50 per sample)",
+       x = "Sample mean cost", y = "Density")
+```
+
+Appendix B: Quick Reference — Theoretical Moments
+
+```{r moments-ref}
+ref <- tribble(
+  ~Distribution, ~Parameters, ~Mean, ~Variance,
+  "Bernoulli", "p", "p", "p(1-p)",
+  "Binomial", "n, p", "np", "np(1-p)",
+  "Poisson", "λ", "λ", "λ",
+  "NegBin (mean μ, size k)", "μ, k", "μ", "μ + μ^2/k",
+  "Exponential", "rate λ", "1/λ", "1/λ^2",
+  "Weibull", "shape k, scale λ", "λ Γ(1+1/k)", "λ^2[Γ(1+2/k)-Γ(1+1/k)^2]",
+  "Gamma", "shape α, scale θ", "αθ", "αθ^2",
+  "Lognormal", "μ, σ", "exp(μ+σ^2/2)", "(exp(σ^2)-1)exp(2μ+σ^2)",
+  "Beta", "α, β", "α/(α+β)", "αβ/[(α+β)^2(α+β+1)]"
+)
+
+gt(ref) %>%
+  tab_header(title = "Selected Distributions and Their Moments")
+```
+
+Best Practices
+
+- Inspect mean-variance relationships to pick appropriate count models.
+- Examine skewness for costs; consider log transforms, Gamma GLMs, or two-part models.
+- For survival data, choose parametric distributions that match plausible hazards; validate with KM overlays.
+- For probabilities and utilities in [0,1], consider Beta distributions; use conjugate priors for transparent Bayesian updates.
+- Always perform model diagnostics and sensitivity analyses; document assumptions.
+
+Session Info
+
+```{r session-info}
+sessionInfo()
+```
