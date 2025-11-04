@@ -1,0 +1,345 @@
+---
+title: "R/RStudio Tutorial + HEOR Template — University of Washington Style (Fixed)"
+author: "Your Name"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    df-print: paged
+    theme: flatly
+    css: uw-theme.css
+    highlight: textmate
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=1in
+    include-in-header: uw-pdf-header.tex
+execute:
+  echo: true
+  warning: false
+  message: false
+editor: source
+---
+
+> **About this document**\
+> Part 1 is a **hands-on tutorial** introducing R and RStudio (installation, interface, data import, packages, objects, analysis, saving work).\
+> Part 2 applies the workflow to a **HEOR** (Health Economics & Outcomes Research) example with a synthetic claims/EHR dataset.\
+> Styled with **University of Washington** purple/gold accents.
+
+# Part 1 — R & RStudio Tutorial
+
+## Installing R and RStudio
+
+-   Download **R** from CRAN (Comprehensive R Archive Network): <https://cran.r-project.org>\
+-   Download **RStudio Desktop** (free): <https://posit.co/download/rstudio-desktop/>
+
+**Order matters:** install **R first**, then **RStudio**. Open RStudio; it will find R automatically.
+
+## Base R vs. RStudio (IDE)
+
+-   **Base R** is the language/interpreter (you can run R at the command line or in the basic R GUI).\
+-   **RStudio** is an IDE that wraps R with an editor, console, plots, package tools, and integrated help.\
+    **Analogy:** *R is the engine; RStudio is the dashboard.*
+
+## The RStudio Interface: The Four Panes
+
+1.  **Source/Editor (top-left)** — write scripts (`.R`), R Markdown (`.Rmd`), and Quarto (`.qmd`). Use `Ctrl/Cmd + Enter` to run.\
+2.  **Console (bottom-left)** — executes code and shows output/errors.\
+3.  **Environment/History (top-right)** — lists objects in memory and your command history.\
+4.  **Files/Plots/Packages/Help/Viewer (bottom-right)** — manage files, view plots, install/load packages, read help (`?function`), preview docs.
+
+**Helpful settings:** **Tools → Global Options** to change appearance, pane layout, default working directory, etc.
+
+## Formatting Flat Files for Loading
+
+Prefer **CSV/TSV** with **UTF-8** encoding. Keep **tidy data**: one row per observation, one column per variable.
+
+**Best practices**\
+- Header row with short, informative names (`snake_case` like `birth_year`).\
+- Dates in **ISO 8601** (`YYYY-MM-DD`); times as `HH:MM:SS`.\
+- Missing values as blank or `NA` (avoid `-99`, mixed codes).\
+- Numbers should be numbers (no currency symbols/commas).
+
+**Mini example (CSV)**
+
+``` text
+id,birth_year,sex,height_cm,weight_kg,enrolled_on
+1001,1984,F,165,60,2023-09-01
+1002,1991,M,178,77,2023-09-03
+```
+
+## Loading a Dataset
+
+### Base R
+
+```{r}
+# read.csv in base R
+# df_base <- read.csv("data/example.csv", stringsAsFactors = FALSE)
+```
+
+### readr (tidyverse)
+
+```{r}
+# library(readr)
+# df <- readr::read_csv("data/example.csv")
+# dplyr::glimpse(df)
+```
+
+> **Other formats:** Excel → `readxl::read_excel()`. SPSS/Stata/SAS → `haven::read_sav()`, `read_dta()`, `read_sas()`. Databases → `DBI`, `RSQLite`, `RPostgres`, etc.
+
+## Installing and Loading Libraries (Packages)
+
+```{r}
+options(repos = c(CRAN = "https://cloud.r-project.org"))  # CRAN mirror (fast)
+# install.packages(c("tidyverse","lubridate","janitor","broom"))
+library(tidyverse); library(lubridate); library(janitor); library(broom)
+```
+
+## Creating Objects
+
+```{r}
+x <- c(1,2,3,4,5)
+y <- tibble(id = 1:3, bmi = c(22.1, 27.3, 31.0))
+
+# Write your own function
+se_mean <- function(v, na.rm = FALSE) {
+  if (na.rm) v <- v[!is.na(v)]
+  sd(v) / sqrt(length(v))
+}
+se_mean(x)
+```
+
+## Conducting Analyses (Quick Tour)
+
+```{r}
+# Summaries
+y |> summarise(n = n(), mean_bmi = mean(bmi), sd_bmi = sd(bmi))
+
+# Visualization
+# ggplot(y, aes(x = bmi)) + geom_histogram(bins = 10)
+
+# Simple model
+# fit <- lm(bmi ~ id, data = y); summary(fit)
+```
+
+## Saving Datasets
+
+```{r}
+# readr::write_csv(y, "outputs/example.csv")
+# saveRDS(y, "outputs/example.rds")
+```
+
+## Saving R Markdown and Quarto Files
+
+-   **R Markdown (.Rmd)**: *File → New File → R Markdown…* → Knit (HTML/PDF/Word).\
+-   **Quarto (.qmd)**: *File → New File → Quarto Document…* → Render.\
+-   For PDF, install a LaTeX distribution (e.g., TinyTeX).\
+-   Use **Projects** (*File → New Project…*) to keep code, data, and outputs together; use **relative paths** within projects.
+
+------------------------------------------------------------------------
+
+# Part 2 — HEOR Walkthrough (Claims/EHR)
+
+This section reuses the same document styling and applies it to a synthetic **HEOR** problem.
+
+## Packages for HEOR
+
+```{r}
+# install.packages(c("survival","MatchIt"))
+library(survival); library(MatchIt)
+```
+
+## Load the Synthetic Claims/EHR Data
+
+```{r}
+claims <- readr::read_csv("data/claims_synthetic.csv",
+  col_types = readr::cols(
+    patient_id = readr::col_character(),
+    sex = readr::col_factor(levels = c("F","M")),
+    birth_date = readr::col_date(),
+    index_date = readr::col_date(),
+    encounter_type = readr::col_factor(levels = c("OP","ED","IP","RX")),
+    icd10 = readr::col_character(),
+    cpt = readr::col_character(),
+    ndc = readr::col_character(),
+    admit_date = readr::col_date(),
+    discharge_date = readr::col_date(),
+    days_supply = readr::col_double(),
+    quantity = readr::col_double(),
+    paid_amount = readr::col_double(),
+    allowed_amount = readr::col_double(),
+    payer = readr::col_factor(),
+    place_of_service = readr::col_factor(),
+    provider_specialty = readr::col_factor()
+))
+glimpse(claims)
+```
+
+### Ensure `cohort_flag` exists (teaching-friendly)
+
+```{r}
+if (!"cohort_flag" %in% names(claims)) {
+  set.seed(42)
+  claims <- claims |>
+    dplyr::group_by(patient_id) |>
+    dplyr::mutate(cohort_flag = as.integer(runif(1) > 0.5)) |>
+    dplyr::ungroup()
+}
+```
+
+## Windows and Derived Measures
+
+```{r}
+claims <- claims |>
+  dplyr::mutate(
+    lookback_start = index_date - lubridate::days(180),
+    post_period_end = index_date + lubridate::days(180)
+  )
+
+# Comorbidity proxy (ICD chapter = first letter; simplified)
+icd_chapter <- function(code) substr(code, 1, 1)
+lb <- claims |>
+  dplyr::filter(encounter_type != "RX", !is.na(admit_date)) |>
+  dplyr::filter(admit_date >= lookback_start, admit_date < index_date) |>
+  dplyr::mutate(chapter = icd_chapter(icd10)) |>
+  dplyr::group_by(patient_id) |>
+  dplyr::summarise(comorbidity_chapters = dplyr::n_distinct(chapter, na.rm = TRUE), .groups = "drop")
+
+# Utilization & LOS
+util <- claims |>
+  dplyr::mutate(LOS = as.numeric(discharge_date - admit_date + 1L)) |>
+  dplyr::summarise(
+    OP_visits = sum(encounter_type == "OP", na.rm = TRUE),
+    ED_visits = sum(encounter_type == "ED", na.rm = TRUE),
+    IP_admits = sum(encounter_type == "IP", na.rm = TRUE),
+    IP_LOS_days = sum(dplyr::if_else(encounter_type == "IP", pmax(0, LOS), 0), na.rm = TRUE),
+    .by = patient_id
+  )
+
+# Costs pre/post
+costs <- claims |>
+  dplyr::mutate(period = dplyr::case_when(
+    admit_date >= lookback_start & admit_date < index_date ~ "pre",
+    admit_date >= index_date & admit_date <= post_period_end ~ "post",
+    TRUE ~ "other"
+  )) |>
+  dplyr::summarise(total_paid = sum(paid_amount, na.rm = TRUE), .by = c(patient_id, period)) |>
+  tidyr::pivot_wider(names_from = period, values_from = total_paid, values_fill = 0)
+
+# PDC adherence (post-index)
+pdc <- claims |>
+  dplyr::filter(encounter_type == "RX", ndc != "") |>
+  dplyr::filter(admit_date >= index_date, admit_date <= post_period_end) |>
+  dplyr::mutate(end = admit_date + lubridate::days(days_supply) - lubridate::days(1)) |>
+  dplyr::group_by(patient_id) |>
+  dplyr::summarise(
+    days_covered = as.numeric(sum(pmin(end, post_period_end) - pmax(admit_date, index_date) + 1, na.rm = TRUE)),
+    pdc_180 = pmin(1, days_covered / 180),
+    .groups = "drop"
+  )
+
+heor_base <- lb |>
+  dplyr::full_join(util, by = "patient_id") |>
+  dplyr::full_join(costs, by = "patient_id") |>
+  dplyr::full_join(pdc, by = "patient_id") |>
+  dplyr::mutate(
+    comorbidity_chapters = tidyr::replace_na(as.numeric(comorbidity_chapters), 0),
+    OP_visits  = tidyr::replace_na(as.numeric(OP_visits), 0),
+    ED_visits  = tidyr::replace_na(as.numeric(ED_visits), 0),
+    IP_admits  = tidyr::replace_na(as.numeric(IP_admits), 0),
+    IP_LOS_days = tidyr::replace_na(as.numeric(IP_LOS_days), 0),
+    pre  = tidyr::replace_na(as.numeric(pre), 0),
+    post = tidyr::replace_na(as.numeric(post), 0),
+    pdc_180 = tidyr::replace_na(as.numeric(pdc_180), 0)
+  )
+
+dplyr::glimpse(heor_base)
+```
+
+## Analyses
+
+### Two-Part Cost Model
+
+```{r}
+heor_base <- heor_base |>
+  dplyr::mutate(any_post_cost = as.integer(post > 0))
+
+part1 <- glm(any_post_cost ~ comorbidity_chapters + OP_visits + ED_visits + IP_admits,
+             data = heor_base, family = binomial())
+
+pos <- dplyr::filter(heor_base, post > 0)
+part2 <- glm(post ~ comorbidity_chapters + OP_visits + ED_visits + IP_admits,
+             data = pos, family = Gamma(link = "log"))
+
+broom::tidy(part1)
+broom::tidy(part2)
+```
+
+### Time-to-Event (First ED Visit)
+
+```{r}
+tte <- claims |>
+  dplyr::filter(encounter_type == "ED") |>
+  dplyr::group_by(patient_id) |>
+  dplyr::summarise(first_ed = min(admit_date[admit_date >= dplyr::first(index_date)]), .groups = "drop") |>
+  dplyr::right_join(claims |> dplyr::distinct(patient_id, index_date), by = "patient_id") |>
+  dplyr::mutate(
+    time = as.numeric(coalesce(first_ed, index_date + 180) - index_date),
+    status = as.integer(!is.na(first_ed))
+  )
+
+km <- survival::survfit(Surv(time, status) ~ 1, data = tte)
+summary(km)
+```
+
+### Propensity Score Matching
+
+```{r}
+coh <- heor_base |>
+  dplyr::left_join(claims |> dplyr::distinct(patient_id, cohort_flag), by = "patient_id") |>
+  dplyr::mutate(cohort_flag = as.integer(cohort_flag)) |>
+  dplyr::filter(!is.na(cohort_flag)) |>
+  dplyr::mutate(dplyr::across(c(comorbidity_chapters, OP_visits, ED_visits, IP_admits),
+                              ~ tidyr::replace_na(as.numeric(.x), 0))) |>
+  dplyr::filter(dplyr::if_all(c(comorbidity_chapters, OP_visits, ED_visits, IP_admits), ~ is.finite(.x)))
+
+m.out <- MatchIt::matchit(cohort_flag ~ comorbidity_chapters + OP_visits + ED_visits + IP_admits,
+                          data = coh, method = "nearest", ratio = 1)
+matched <- MatchIt::match.data(m.out)
+dplyr::count(matched, cohort_flag)
+```
+
+### Difference-in-Differences (Naïve Contrast)
+
+```{r}
+did <- heor_base |>
+  dplyr::select(patient_id, pre, post) |>
+  dplyr::left_join(claims |> dplyr::distinct(patient_id, cohort_flag), by = "patient_id") |>
+  dplyr::mutate(diff = post - pre, cohort_flag = as.integer(cohort_flag))
+
+with(did, mean(diff[cohort_flag == 1], na.rm = TRUE) - mean(diff[cohort_flag == 0], na.rm = TRUE))
+```
+
+## Visualization
+
+```{r}
+ggplot(heor_base, aes(x = pdc_180)) +
+  geom_histogram(bins = 20) +
+  labs(title = "Medication Adherence (PDC over 180 days)", x = "PDC", y = "Count")
+```
+
+## Saving Outputs
+
+```{r}
+readr::write_csv(heor_base, "outputs/heor_base.csv")
+saveRDS(heor_base, "outputs/heor_base.rds")
+```
+
+# Appendix — Where to Learn More
+
+-   **Posit Cheatsheets:** *Help → Cheatsheets* in RStudio (dplyr, ggplot2, stringr, purrr, survival, etc.)\
+-   **Vignettes:** `browseVignettes()`, `vignette(package = "survival")`\
+-   **Docs:** Quarto User Guide, R for Data Science (2e), CRAN Task Views\
+-   **AI Assistants:** helpful for explanations—verify with official docs and avoid sharing sensitive data.

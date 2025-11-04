@@ -33,9 +33,9 @@ This Quarto document reviews key probability concepts and the distributions most
 
 How to use this document
 
-- Run all cells to generate simulated examples for each concept/distribution.
-- Replace simulated inputs with your data to see how distributional choices affect analysis.
-- Use figures and tables as templates for teaching, code review, or reports.
+-   Run all cells to generate simulated examples for each concept/distribution.
+-   Replace simulated inputs with your data to see how distributional choices affect analysis.
+-   Use figures and tables as templates for teaching, code review, or reports.
 
 Setup
 
@@ -66,20 +66,20 @@ rdirichlet <- function(n, alpha) {
 }
 ```
 
-1. Probability Basics
+1.  Probability Basics
 
 Key ideas
 
-- Events and probabilities: P(A), P(B), joint P(A ∩ B), conditional P(A | B) = P(A ∩ B) / P(B).
-- Independence: A and B are independent if P(A ∩ B) = P(A)P(B).
-- Law of large numbers (LLN): sample proportions and means converge to true probabilities/expectations as n increases.
+-   Events and probabilities: P(A), P(B), joint P(A ∩ B), conditional P(A \| B) = P(A ∩ B) / P(B).
+-   Independence: A and B are independent if P(A ∩ B) = P(A)P(B).
+-   Law of large numbers (LLN): sample proportions and means converge to true probabilities/expectations as n increases.
 
 Example (HEOR context)
 
-- A: Monthly cost > $10,000
-- B: At least one inpatient admission this month
+-   A: Monthly cost \> \$10,000
+-   B: At least one inpatient admission this month
 
-We simulate cost and admissions for many member-months and estimate P(A), P(B), P(A ∩ B), P(A)P(B), P(A | B).
+We simulate cost and admissions for many member-months and estimate P(A), P(B), P(A ∩ B), P(A)P(B), P(A \| B).
 
 ```{r prob-basics}
 n_mc <- 100000
@@ -127,13 +127,13 @@ ggplot(running_pB %>% filter(n %% 200 == 0), aes(n, pB_hat)) +
            label = "True P(B) = 1 - P(0 admits) = 1 - e^{-λ}", color = "tomato")
 ```
 
-2. Random Variables, Expectation, and Variance
+2.  Random Variables, Expectation, and Variance
 
 Key ideas
 
-- A random variable X has a distribution summarized by its mean E[X] and variance Var(X).
-- Linear expectation: E[aX + b] = aE[X] + b; Var(aX + b) = a^2 Var(X).
-- For sums of independent variables, means add and variances add.
+-   A random variable X has a distribution summarized by its mean E\[X\] and variance Var(X).
+-   Linear expectation: E\[aX + b\] = aE\[X\] + b; Var(aX + b) = a\^2 Var(X).
+-   For sums of independent variables, means add and variances add.
 
 Demonstration with simulated costs (lognormal) and admissions (Poisson):
 
@@ -163,13 +163,13 @@ gt(compare) %>%
   tab_header(title = "Empirical vs Theoretical Moments")
 ```
 
-3. Bernoulli and Binomial: Binary outcomes and counts of successes
+3.  Bernoulli and Binomial: Binary outcomes and counts of successes
 
 Common HEOR uses
 
-- Readmission within 30 days (yes/no).
-- Medication adherence threshold (PDC ≥ 80%).
-- Number of responders in a sample.
+-   Readmission within 30 days (yes/no).
+-   Medication adherence threshold (PDC ≥ 80%).
+-   Number of responders in a sample.
 
 ```{r bernoulli-binomial}
 # Bernoulli trials (readmission yes/no)
@@ -208,12 +208,12 @@ ggplot(df, aes(k, pmf)) +
   labs(x = "Number of responders", y = "Probability")
 ```
 
-4. Poisson and Negative Binomial: Utilization counts and overdispersion
+4.  Poisson and Negative Binomial: Utilization counts and overdispersion
 
 Common HEOR uses
 
-- Counts of inpatient admissions, ED visits, office visits.
-- Overdispersion (variance > mean) is common; Negative Binomial often fits better than Poisson.
+-   Counts of inpatient admissions, ED visits, office visits.
+-   Overdispersion (variance \> mean) is common; Negative Binomial often fits better than Poisson.
 
 ```{r pois-vs-nb}
 n <- 10000
@@ -274,12 +274,12 @@ gt(coef_tbl %>% dplyr::select(model, term, estimate, std.error, p.value)) %>%
   tab_header(title = "Poisson vs Negative Binomial Regression Coefficients")
 ```
 
-5. Cost Distributions: Gamma and Lognormal
+5.  Cost Distributions: Gamma and Lognormal
 
 Common HEOR uses
 
-- Costs are positive and right-skewed.
-- Gamma GLM with log link or Lognormal models are typical; two-part models when many zeros.
+-   Costs are positive and right-skewed.
+-   Gamma GLM with log link or Lognormal models are typical; two-part models when many zeros.
 
 ```{r gamma-lognormal}
 n <- 10000
@@ -333,12 +333,12 @@ tidy(fit_gamma, conf.int = TRUE) %>%
   tab_header(title = "Gamma GLM (log link) for Costs")
 ```
 
-6. Time-to-Event Distributions: Exponential and Weibull
+6.  Time-to-Event Distributions: Exponential and Weibull
 
 Common HEOR uses
 
-- Time to hospitalization, treatment discontinuation, death.
-- Exponential has constant hazard; Weibull allows increasing/decreasing hazard.
+-   Time to hospitalization, treatment discontinuation, death.
+-   Exponential has constant hazard; Weibull allows increasing/decreasing hazard.
 
 ```{r survival-sim}
 set.seed(3)
@@ -397,12 +397,12 @@ ggplot(haz, aes(time, hazard, color = dist)) +
   labs(x = "Time", y = "Hazard", color = "Distribution")
 ```
 
-7. Beta Distribution: Probabilities and Utilities (0–1)
+7.  Beta Distribution: Probabilities and Utilities (0–1)
 
 Common HEOR uses
 
-- Utility weights and QALYs bounded in [0,1].
-- Probabilities and rates, including Bayesian priors.
+-   Utility weights and QALYs bounded in \[0,1\].
+-   Probabilities and rates, including Bayesian priors.
 
 ```{r beta-examples, fig.cap="Beta distributions illustrate diverse shapes for bounded quantities."}
 x <- seq(0, 1, by = 0.001)
@@ -444,12 +444,12 @@ gt(tab) %>%
   tab_header(title = "Beta-Binomial Update for a Response Probability")
 ```
 
-8. Multinomial and Dirichlet: Transitions in Markov Models
+8.  Multinomial and Dirichlet: Transitions in Markov Models
 
 Common HEOR uses
 
-- Multistate models with row-wise transition probabilities.
-- Dirichlet prior over categorical probabilities.
+-   Multistate models with row-wise transition probabilities.
+-   Dirichlet prior over categorical probabilities.
 
 ```{r dirichlet-demo}
 set.seed(4)
@@ -463,11 +463,11 @@ gt(dirichlet_tbl %>% mutate(across(-row, ~round(.x, 3)))) %>%
   tab_header(title = "Samples from Dirichlet(alpha = [10,5,2])")
 ```
 
-9. Zero-Inflated and Hurdle Models: Many Zeros in Utilization
+9.  Zero-Inflated and Hurdle Models: Many Zeros in Utilization
 
 Common HEOR uses
 
-- Zero-inflated counts for ED visits, admissions, or costs in short windows.
+-   Zero-inflated counts for ED visits, admissions, or costs in short windows.
 
 ```{r zip-demo, fig.cap="Zero-Inflated Poisson (π=0.4, λ=1.2) produces excess zeros and overdispersion."}
 set.seed(5)
@@ -501,12 +501,12 @@ gridExtra::grid.arrange(
 
 10. Linking Distributions to HEOR Modeling Choices
 
-- Binary outcomes: Bernoulli/Binomial; logistic regression (logit link).
-- Counts: Poisson (log link) if variance ≈ mean; Negative Binomial for overdispersion.
-- Costs: Gamma (log link) or Lognormal; two-part/hurdle when many zeros.
-- Time-to-event: Exponential (constant hazard), Weibull (flexible hazard), Cox (semiparametric).
-- Probabilities/utilities: Beta; transition vectors: Dirichlet/Multinomial.
-- Zero inflation: Zero-inflated Poisson/NegBin; hurdle models.
+-   Binary outcomes: Bernoulli/Binomial; logistic regression (logit link).
+-   Counts: Poisson (log link) if variance ≈ mean; Negative Binomial for overdispersion.
+-   Costs: Gamma (log link) or Lognormal; two-part/hurdle when many zeros.
+-   Time-to-event: Exponential (constant hazard), Weibull (flexible hazard), Cox (semiparametric).
+-   Probabilities/utilities: Beta; transition vectors: Dirichlet/Multinomial.
+-   Zero inflation: Zero-inflated Poisson/NegBin; hurdle models.
 
 Appendix A: Central Limit Theorem (CLT) example
 
@@ -548,11 +548,11 @@ gt(ref) %>%
 
 Best Practices
 
-- Inspect mean-variance relationships to pick appropriate count models.
-- Examine skewness for costs; consider log transforms, Gamma GLMs, or two-part models.
-- For survival data, choose parametric distributions that match plausible hazards; validate with KM overlays.
-- For probabilities and utilities in [0,1], consider Beta distributions; use conjugate priors for transparent Bayesian updates.
-- Always perform model diagnostics and sensitivity analyses; document assumptions.
+-   Inspect mean-variance relationships to pick appropriate count models.
+-   Examine skewness for costs; consider log transforms, Gamma GLMs, or two-part models.
+-   For survival data, choose parametric distributions that match plausible hazards; validate with KM overlays.
+-   For probabilities and utilities in \[0,1\], consider Beta distributions; use conjugate priors for transparent Bayesian updates.
+-   Always perform model diagnostics and sensitivity analyses; document assumptions.
 
 Session Info
 

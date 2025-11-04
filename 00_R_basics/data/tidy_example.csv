@@ -1,0 +1,7 @@
+"subject_id","group","age_years","visit_date","score"
+1,"control",34,2025-01-10,87
+2,"control",45,2025-01-12,90
+3,"control",51,2025-01-13,85
+4,"treatment",29,2025-01-11,92
+5,"treatment",40,2025-01-12,88
+6,"treatment",,2025-01-14,91
