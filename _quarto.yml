@@ -1,0 +1,38 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "R/RStudio Tutorial + HEOR — UW Style"
+  description: "University of Washington–styled Quarto tutorial with HEOR examples (claims/EHR)."
+  navbar:
+    left:
+      - text: "Home"
+        href: index.qmd
+      - text: "HEOR Template"
+        href: heor-template.qmd
+      - text: "Data"
+        menu:
+          - text: "Synthetic claims CSV"
+            href: data/claims_synthetic.csv
+    right:
+      - icon: github
+        href: https://github.com/your-org-or-user/your-repo
+  page-footer:
+    left: "© {year} University of Washington (style)."
+    right: "Built with Quarto"
+
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    df-print: paged
+    theme: flatly
+    css: uw-theme.css
+    highlight: textmate
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=1in
+    include-in-header: uw-pdf-header.tex
